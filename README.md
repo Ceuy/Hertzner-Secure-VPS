@@ -1,4 +1,4 @@
-# Secure Zero-Trust VPS Infrastructure
+# Secure Zero-Trust VPS Infrastructure (+Guide)
 
 A hardened cloud VPS demonstrating security-first provisioning — SSH access restricted exclusively through a Tailscale mesh VPN, with automated backups and infrastructure built with Zero Trust networking principles in mind.
 
