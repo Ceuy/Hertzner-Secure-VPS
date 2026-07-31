@@ -1,0 +1,35 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: upgrade all packages
+  apt:
+    upgrade: dist
+
+- name: Install unattended-upgrades
+  apt:
+    name: unattended-upgrades
+    state: present
+
+- name: Enable unattended-upgrades
+  copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Disable password authentication
+  lineinfile:
+   path: /etc/ssh/sshd_config
+   regexp: '^#?PasswordAuthentication'
+   line: 'PasswordAuthentication no'
+  notify: Restart sshd
+
+- name: Disable root login over SSH (after Tailscale is set up)
+  lineinfile:
+   path: /etc/ssh/sshd_config
+   regexp: '^#?PermitRootLogin'
+   line: 'PermitRootLogin prohibit-password'
+  notify: Restart sshd

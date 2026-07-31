@@ -1,0 +1,11 @@
+---
+- name: Harden and configure secure VPS
+  hosts: vps
+  become: true
+  vars_files:
+    - vault.yml
+  roles:
+    - hardening
+    - tailscale
+    - firewall
+    - backup
