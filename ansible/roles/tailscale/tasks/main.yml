@@ -1,0 +1,44 @@
+---
+- name: Ensure keyrings directory exists
+  file:
+   path: /usr/share/keyrings
+   state: directory
+   mode: '0755'
+
+- name: Download and add Tailscale GPG key
+  get_url:
+    url: https://pkgs.tailscale.com/stable/ubuntu/resolute.noarmor.gpg
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: '0644'
+
+- name: Add Tailscale repository
+  apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu resolute main"
+    state: present
+    filename: tailscale
+
+- name: install Tailscale
+  apt:
+    name: tailscale
+    state: present
+    update_cache: yes
+
+- name: Enable and start Tailscaled
+  service:
+    name: tailscaled
+    enabled: yes
+    state: started
+
+- name: Check Tailscale status
+  command: tailscale status --json
+  register: ts_status_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse Tailscale status
+  set_fact:
+    ts_backend_state: "{{ (ts_status_raw.stdout | from_json).BackendState }}"
+
+- name: Join Tailscale network
+  command: "tailscale up --authkey={{ tailscale_authkey }} --ssh"
+  when: ts_backend_state != "Running"
