@@ -1,0 +1,2 @@
+hcloud_token = "Hetzner_API_token" # <- Your Hetzner API token here
+bootstrap_ssh_cidr = "203.0.113.5/32" # <- Your public IP Here
