@@ -4,3 +4,15 @@ id_rsa
 id_rsa.pub
 .env
 *.log
+
+#terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/*.tfvars.json
+terraform/.terraform.lock.hcl
+
+# Ansible
+ansible/*.retry
+
