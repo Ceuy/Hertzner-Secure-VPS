@@ -1,0 +1,19 @@
+---
+- name: Create backup script directory
+  file:
+    path: /opt/backup
+    state: directory
+    mode: '0755'
+
+- name: Deploy backup script
+  copy:
+    src: backup.sh
+    dest: /opt/backup/backup.sh
+    mode: '0755'
+
+- name: Schedule backup cron job
+  cron:
+    name: "Backup script"
+    minute: "0"
+    hour: "2"
+    job: "/opt/backup/backup.sh >> /var/log/backup.log 2>&1"
