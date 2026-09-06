@@ -42,3 +42,7 @@
 - name: Join Tailscale network
   command: "tailscale up --authkey={{ tailscale_authkey }} --ssh"
   when: ts_backend_state != "Running"
+
+- name: Disable Tailscale SSH (prevent bypass of OpenSSH access controls)
+  command: tailscale set --ssh=false
+  changed_when: false
