@@ -1,0 +1,28 @@
+---
+- name: Create non-root admin user
+  user:
+    name: "{{ admin_user }}"
+    shell: /bin/bash
+    groups: sudo
+    append: yes
+    state: present
+
+- name: Set up authorized_keys for admin user
+  authorized_key:
+    user: "{{ admin_user }}"
+    key: "{{ lookup('file', ssh_public_key_path) }}"
+    state: present
+
+- name: Allow passwordless sudo for admin user
+  copy:
+    dest: "/etc/sudoers.d/{{ admin_user }}"
+    content: "{{ admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: '0440'
+    validate: 'visudo -cf %s'
+
+- name: Disable root SSH login entirely
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin no'
+  notify: Restart sshd

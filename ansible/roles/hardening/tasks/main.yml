@@ -27,9 +27,3 @@
    line: 'PasswordAuthentication no'
   notify: Restart sshd
 
-- name: Disable root login over SSH (after Tailscale is set up)
-  lineinfile:
-   path: /etc/ssh/sshd_config
-   regexp: '^#?PermitRootLogin'
-   line: 'PermitRootLogin prohibit-password'
-  notify: Restart sshd
