@@ -10,18 +10,10 @@ resource "hcloud_server" "vps" {
   image       = var.image
 
   ssh_keys = [hcloud_ssh_key.default.id]
+  firewall_ids = [hcloud_firewall.zero_trust.id]
 
     labels = {
         project = "secure-vps"
         managed_by = "terraform"
     }
-/*
-  # Temporary firewall rule to allow SSH from a specific CIDR before Tailscale is set up
-  user_data = <<-EOF
-              #cloud-config
-              runcmd:
-                - ufw allow from ${var.bootstrap_ssh_cidr} to any port 22 proto tcp
-                - ufw enable
-              EOF
-              */
 } 
