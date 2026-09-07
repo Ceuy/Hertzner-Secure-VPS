@@ -70,8 +70,11 @@ not the public one.
 │   ├── site.yml            # main playbook
 │   ├── vault.yml           # encrypted secrets (Tailscale authkey)
 │   └── roles/
-│       ├── hardening/      # SSH lockdown, unattended-upgrades
-│       ├── tailscale/      # keyring install, idempotent join/status check
+│       ├── users/          # non-root admin user, passwordless sudo,
+│       │                   # PermitRootLogin no
+│       ├── hardening/      # unattended-upgrades, general OS hardening
+│       ├── tailscale/      # keyring install, idempotent join/status check,
+│       │                   # disables Tailscale's own SSH server
 │       ├── firewall/       # UFW: default deny, allow tailscale0 only
 │       └── backup/         # config/state backup + cron schedule
 ├── .gitattributes           # enforces LF line endings for shell scripts
@@ -94,6 +97,11 @@ terraform apply
 
 ### 2. Configure the host
 
+`inventory.ini` and `ansible.cfg` ship configured for **first-time
+bootstrap**: the public IP, connecting as `root` (the only account that
+exists before the `users` role runs). This is deliberate — a freshly
+provisioned box has no `viktor` user and no Tailscale connection yet.
+
 ```bash
 cd ../ansible
 ansible-vault edit vault.yml   # set tailscale_authkey (reusable key, Tailscale admin console)
@@ -102,15 +110,29 @@ ansible vps -m ping             # confirm connectivity first
 ansible-playbook site.yml --ask-vault-pass
 ```
 
+**After this first run completes**, root SSH is disabled and the box is
+on the Tailscale mesh. Switch to steady-state access before running the
+playbook again:
+```bash
+ssh -i ~/.ssh/id_ed25519_vps viktor@<public-ip-or-old-tailscale-ip> tailscale ip -4
+```
+Update `inventory.ini` with that Tailscale IP and change `ansible.cfg`'s
+`remote_user` from `root` to `viktor`. All subsequent runs (and the
+`rebuild-demo.sh` script) use this steady-state config — but note that a
+**destroy + recreate** returns the box to bootstrap state, so this
+switch has to happen again after every full rebuild.
+
 ### 3. Verify
 
 ```bash
-# via the bootstrap IP, before Tailscale is confirmed:
+# via the bootstrap IP, before hardening runs, using the key Terraform
+# uploaded (root is still open at this point — before the `users` role runs):
 ssh -i ~/.ssh/id_ed25519_vps root@$(terraform output -raw server_ip) tailscale status
 
-# after Tailscale is up and UFW is applied, use the Tailscale IP instead —
-# the public IP is no longer reachable over SSH by design:
-ssh root@<tailscale-ip>
+# after the full playbook has run, root SSH is permanently disabled —
+# use the non-root admin user instead, over the Tailscale IP:
+ssh -i ~/.ssh/id_ed25519_vps viktor@<tailscale-ip>
+sudo whoami   # -> root, no password prompt (passwordless sudo)
 ```
 
 Should show `Running`, with the node visible in the Tailscale admin console.
@@ -146,11 +168,20 @@ public IP stopped accepting SSH entirely (connection timeout), while the
 Tailscale mesh connection remained unaffected:
 
 ```
-$ ssh root@<public-ip>          # blocked, as intended
+$ ssh viktor@<public-ip>          # blocked, as intended
 ssh: connect to host <public-ip> port 22: Connection timed out
 
-$ ssh root@<tailscale-ip>       # still works
+$ ssh viktor@<tailscale-ip>       # still works
 Last login: ...
+```
+
+**Root access fully disabled, verified against the real SSH daemon:**
+```
+$ ssh -i ~/.ssh/id_ed25519_vps root@<tailscale-ip>
+root@<tailscale-ip>: Permission denied (publickey).
+
+$ ssh -i ~/.ssh/id_ed25519_vps viktor@<tailscale-ip>
+[connects normally]
 ```
 
 **Backup verification:**
@@ -201,10 +232,41 @@ underlying cause rather than trial-and-error:
   glance. Fixed on the host with `sed -i 's/\r$//'`, and permanently with
   a `.gitattributes` rule (`*.sh text eol=lf`) so Git normalizes line
   endings on checkout regardless of which OS/editor touches the file next.
+- **Tailscale SSH silently bypassing OpenSSH's access controls:** after
+  adding a `users` role to create a non-root admin account and fully
+  disable root SSH login (`PermitRootLogin no`), root login still
+  appeared to succeed. Root cause: `tailscale up --ssh` (run during
+  initial setup) enables Tailscale's own built-in SSH server, which
+  authenticates connections over the Tailscale IP using the tailnet's
+  own ACL policy — a completely separate trust model from OpenSSH,
+  with no awareness of `sshd_config` at all. Two independent SSH
+  servers were both listening; Tailscale's answered first and used its
+  own (permissive-by-default) rules, making `PermitRootLogin no` look
+  broken when it was actually just being bypassed. Confirmed via
+  `ssh -vvv`, which showed `remote software version Tailscale` and
+  `Authenticated ... using "none"` instead of a real OpenSSH key
+  exchange. Fixed with `tailscale set --ssh=false`, restoring OpenSSH
+  as the sole authority over SSH access — now codified as an explicit
+  task in the `tailscale` role so it survives every rebuild.
+- **`tailscale up --ssh` re-introducing the bypass on every rejoin:** even
+  after disabling Tailscale SSH, the `Join Tailscale network` task still
+  passed `--ssh` to `tailscale up`. Any time that task actually ran
+  (rather than being skipped), it silently re-enabled Tailscale SSH,
+  relying on a later task to disable it again — fragile, and it broke
+  outright once Tailscale itself started refusing the flag when run
+  over an active Tailscale SSH session ("this action will result in your
+  session disconnecting"). Fixed by dropping `--ssh` from the join
+  command entirely, since Tailscale SSH is never wanted here.
 
 ## Security notes
 
 - No password authentication anywhere; SSH key-only access.
+- Root SSH login is fully disabled (`PermitRootLogin no`); a dedicated
+  non-root user has passwordless sudo instead. Verified directly against
+  OpenSSH (not Tailscale SSH — see Challenges above).
+- Tailscale's own SSH server is explicitly disabled (`tailscale set
+  --ssh=false`) so OpenSSH remains the single, auditable point of access
+  control — no second, independently-governed SSH path.
 - `vault.yml` is encrypted with Ansible Vault and safe to commit — the
   vault password itself is never stored in the repo.
 - `terraform.tfvars` (containing the Hetzner API token) is gitignored and
@@ -220,9 +282,17 @@ underlying cause rather than trial-and-error:
   UFW rules, unattended-upgrades config, Tailscale state) — not
   application data. This host doesn't currently serve an application;
   the backup scope will expand once it does.
+- Backups have been created and their contents verified (`tar -tzf`),
+  but a full **restore** has not yet been tested end-to-end.
+- No intrusion detection or log monitoring (`fail2ban` or equivalent)
+  is in place yet — UFW blocks by default policy, but nothing currently
+  alerts on or throttles repeated connection attempts.
 
 ## Roadmap
 
+- [ ] `fail2ban` + basic log monitoring
+- [ ] Test an actual backup restore, not just backup creation
 - [ ] CI check (GitHub Actions) running `terraform plan` on pull requests
 - [ ] Expand backup scope once the host serves an actual application
 - [ ] Dynamic Ansible inventory sourced directly from Terraform output
+- [ ] Phase 3: deploy an actual service onto the hardened box
