@@ -40,7 +40,7 @@
     ts_backend_state: "{{ (ts_status_raw.stdout | from_json).BackendState }}"
 
 - name: Join Tailscale network
-  command: "tailscale up --authkey={{ tailscale_authkey }} --ssh"
+  command: "tailscale up --authkey={{ tailscale_authkey }}"
   when: ts_backend_state != "Running"
 
 - name: Disable Tailscale SSH (prevent bypass of OpenSSH access controls)
