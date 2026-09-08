@@ -15,4 +15,4 @@ terraform/.terraform.lock.hcl
 
 # Ansible
 ansible/*.retry
-
+ansible/inventory.ini
