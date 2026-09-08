@@ -1,0 +1,2 @@
+[vps]
+secure-vps ansible_host=<Hetzner-IP>
